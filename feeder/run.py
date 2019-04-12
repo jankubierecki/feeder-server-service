@@ -23,17 +23,17 @@ socketio = SocketIO(app, async_mode=async_mode)
 def connect_mongo():
     from pymongo import MongoClient
 
-    mongo_connector = 'mongodb://{host}:{port}/'.format(host=app.config['MONGODB_SETTINGS']['host'],
-                                                        port=app.config['MONGODB_SETTINGS']['port'])
+    mongo_connector = 'mongodb://{host}:{port}/'.format(
+        host=app.config['MONGODB_SETTINGS']['host'],
+        port=app.config['MONGODB_SETTINGS']['port']
+    )
     client = MongoClient(mongo_connector)
-
     return client
 
 
 def get_database():
     client = connect_mongo()
     db = client['file']
-
     return db
 
 
@@ -41,11 +41,9 @@ def get_database():
 def index():
     db = get_database()
     files = list()
-
     for file in db['file'].find():
         pprint.pprint(file)
         files.append(file)
-
     return json.dumps(files)
 
 
