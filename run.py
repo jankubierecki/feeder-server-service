@@ -9,15 +9,15 @@ import pymongo
 from json_encoder import JSONEncoder
 
 async_mode = "eventlet"
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'SECRET_KEY'
+application = Flask(__name__)
+application.config['SECRET_KEY'] = 'SECRET_KEY'
 
-socketio = SocketIO(app, async_mode=async_mode)
+socketio = SocketIO(application, async_mode=async_mode)
 
 
 def connect_mongo():
     username = os.environ.get("SSH_USERNAME", "ubuntu")
-    key = os.environ.get("SSH_PKEY", "./server.pem")
+    key = os.environ.get("SSH_PKEY", "~/.ssh/server.pem")
     host = os.environ.get("HOST", '127.0.0.1')
     port = 27017
 
@@ -42,12 +42,14 @@ def handle_connection():
     emit('connected')
 
 
-@app.route('/')
+@application.route('/')
 def test():
+    """ just for testing purposes """
+
     files = [f for f in session['file']['file'].find()]
 
     return JSONEncoder().encode(files)
 
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+    socketio.run(application, host='0.0.0.0', port=5000, debug=True, use_reloader=False)
