@@ -24,7 +24,7 @@ def connect_mongo():
     return client
 
 
-HOST = os.environ.get('SERVER_HOST', '127.0.0.1')
+HOST = os.environ.get('SERVER_HOST', '')
 PORT = 65432
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
