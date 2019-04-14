@@ -1,24 +1,14 @@
 import os
 
-from flask import Flask
-from flask_socketio import SocketIO, emit
-
 from sshtunnel import SSHTunnelForwarder
 import pymongo
-
-from json_encoder import JSONEncoder
-
-async_mode = "eventlet"
-application = Flask(__name__)
-application.config['SECRET_KEY'] = 'SECRET_KEY'
-
-socketio = SocketIO(application, async_mode=async_mode)
+import socket
 
 
 def connect_mongo():
     username = os.environ.get("SSH_USERNAME", "ubuntu")
     key = os.environ.get("SSH_PKEY", "~/.ssh/server.pem")
-    host = os.environ.get("HOST", '127.0.0.1')
+    host = os.environ.get("DB_HOST", '127.0.0.1')
     port = 27017
 
     server = SSHTunnelForwarder(
@@ -34,22 +24,21 @@ def connect_mongo():
     return client
 
 
-session = connect_mongo()
+HOST = os.environ.get('SERVER_HOST', '127.0.0.1')
+PORT = 65432
 
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    """ new unique socket object, used to talk with client 
+    and it’s distinct from the listening socket that the server is using to accept new connections """
 
-@socketio.on('connect')
-def handle_connection():
-    emit('connected')
-
-
-@application.route('/')
-def test():
-    """ just for testing purposes """
-
-    files = [f for f in session['file']['file'].find()]
-
-    return JSONEncoder().encode(files)
-
-
-if __name__ == '__main__':
-    socketio.run(application, host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+    s.bind((HOST, PORT))
+    s.listen()
+    conn, addr = s.accept()
+    with conn:
+        print('Connected by', addr)
+        while True:
+            data = conn.recv(1024)
+            if not data:
+                break
+            conn.sendall(data)
+            print(data)
