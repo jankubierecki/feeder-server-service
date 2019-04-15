@@ -1,4 +1,3 @@
-import json
 import os
 import types
 
@@ -7,6 +6,12 @@ import pymongo
 
 import socket
 import selectors
+
+from json_transformers import binary_to_dict, dict_to_binary
+
+HOST = os.environ.get('SERVER_HOST', '')
+PORT = 65432
+SEL = selectors.DefaultSelector()
 
 
 def connect_mongo():
@@ -28,56 +33,54 @@ def connect_mongo():
     return client
 
 
-def binary_to_dict(b):
-    jsn = ''.join(chr(int(x, 2)) for x in b.split())
-    d = json.loads(jsn)
-    return d
-
-
 def accept_wrapper(sock):
     conn, addr = sock.accept()  # Should be ready to read
     print('accepted connection from', addr)
     conn.setblocking(False)
     data = types.SimpleNamespace(addr=addr, inb=b'', outb=b'')
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    sel.register(conn, events, data=data)
+    SEL.register(conn, events, data=data)
 
 
 def service_connection(key, mask):
     sock = key.fileobj
-    data = binary_to_dict(key.data)
+    data = key.data
     if mask & selectors.EVENT_READ:
-        recv_data = sock.recv(1024)  # Should be ready to read
+        recv_data = sock.recv(1024)
         if recv_data:
             data.outb += recv_data
+            print('data received and added to the socket')
         else:
             print('closing connection to', data.addr)
-            sel.unregister(sock)  # client closed connection so the server
+            SEL.unregister(sock)  # client closed connection so the server
             sock.close()
     if mask & selectors.EVENT_WRITE:
         if data.outb:
-            print(data.outb)
             print('echoing', repr(data.outb), 'to', data.addr)
+            # data.outb = binary_to_dict(data.outb)  # todo mongo with this
             sent = sock.send(data.outb)  # Should be ready to write
 
+            data.outb = data.outb[sent:]
 
-HOST = os.environ.get('SERVER_HOST', '')
-PORT = 65432
 
-sel = selectors.DefaultSelector()
+def prepare():
+    lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    lsock.bind((HOST, PORT))
+    lsock.listen()
 
-lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-lsock.bind((HOST, PORT))
-lsock.listen()
+    print('listening on', (HOST, PORT))
 
-print('listening on', (HOST, PORT))
+    lsock.setblocking(False)  # calls made to this socket will no longer block
+    SEL.register(lsock, selectors.EVENT_READ, data=None)
 
-lsock.setblocking(False)  # calls made to this socket will no longer block
-sel.register(lsock, selectors.EVENT_READ, data=None)
 
-events = sel.select(timeout=None)  # returns a list of (key, events) tuples, one for each socket
-for key, mask in events:
-    if key.data is None:
-        accept_wrapper(key.fileobj)  # call to get the new socket object and register it with the selector
-    else:
-        service_connection(key, mask)  # client socket already been accepted, so service it
+if __name__ == '__main__':
+    prepare()
+
+    while True:
+        events = SEL.select(timeout=None)  # returns a list of (key, events) tuples, one for each socket
+        for key, mask in events:
+            if key.data is None:
+                accept_wrapper(key.fileobj)  # call to get the new socket object and register it with the selector
+            else:
+                service_connection(key, mask)  # client socket already been accepted, so service it
