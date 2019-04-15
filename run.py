@@ -1,3 +1,4 @@
+import json
 import os
 import types
 
@@ -27,6 +28,12 @@ def connect_mongo():
     return client
 
 
+def binary_to_dict(b):
+    jsn = ''.join(chr(int(x, 2)) for x in b.split())
+    d = json.loads(jsn)
+    return d
+
+
 def accept_wrapper(sock):
     conn, addr = sock.accept()  # Should be ready to read
     print('accepted connection from', addr)
@@ -38,14 +45,14 @@ def accept_wrapper(sock):
 
 def service_connection(key, mask):
     sock = key.fileobj
-    data = key.data
+    data = binary_to_dict(key.data)
     if mask & selectors.EVENT_READ:
         recv_data = sock.recv(1024)  # Should be ready to read
         if recv_data:
             data.outb += recv_data
         else:
             print('closing connection to', data.addr)
-            sel.unregister(sock)    # client closed connection so the server
+            sel.unregister(sock)  # client closed connection so the server
             sock.close()
     if mask & selectors.EVENT_WRITE:
         if data.outb:
@@ -68,10 +75,9 @@ print('listening on', (HOST, PORT))
 lsock.setblocking(False)  # calls made to this socket will no longer block
 sel.register(lsock, selectors.EVENT_READ, data=None)
 
-while True:
-    events = sel.select(timeout=None)  # returns a list of (key, events) tuples, one for each socket
-    for key, mask in events:
-        if key.data is None:
-            accept_wrapper(key.fileobj)  # call to get the new socket object and register it with the selector
-        else:
-            service_connection(key, mask)  # client socket already been accepted, so service it
+events = sel.select(timeout=None)  # returns a list of (key, events) tuples, one for each socket
+for key, mask in events:
+    if key.data is None:
+        accept_wrapper(key.fileobj)  # call to get the new socket object and register it with the selector
+    else:
+        service_connection(key, mask)  # client socket already been accepted, so service it
