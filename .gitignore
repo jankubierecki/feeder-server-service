@@ -2,3 +2,4 @@ venv
 .idea
 *.pyc__pycache__
 venv
+__pycache__
