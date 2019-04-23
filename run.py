@@ -1,13 +1,17 @@
 import os
+import pickle
+import sys
 import types
 
+from bson.json_util import dumps
 from sshtunnel import SSHTunnelForwarder
 import pymongo
+from pymongo.errors import ConnectionFailure
 
 import socket
 import selectors
 
-from json_transformers import binary_to_dict, dict_to_binary
+from json_transformers import dict_to_binary
 
 HOST = os.environ.get('SERVER_HOST', '')
 PORT = 65432
@@ -16,7 +20,7 @@ SEL = selectors.DefaultSelector()
 
 def connect_mongo():
     username = os.environ.get("SSH_USERNAME", "ubuntu")
-    key = os.environ.get("SSH_PKEY", "~/.ssh/server.pem")
+    key = os.environ.get("SSH_PKEY", "/home/ubuntu/.ssh/server.pem")
     host = os.environ.get("DB_HOST", '127.0.0.1')
     port = 27017
 
@@ -34,7 +38,7 @@ def connect_mongo():
 
 
 def accept_wrapper(sock):
-    conn, addr = sock.accept()  # Should be ready to read
+    conn, addr = sock.accept()
     print('accepted connection from', addr)
     conn.setblocking(False)
     data = types.SimpleNamespace(addr=addr, inb=b'', outb=b'')
@@ -51,16 +55,32 @@ def service_connection(key, mask):
             data.outb += recv_data
             print('data received and added to the socket')
         else:
-            print('closing connection to', data.addr)
-            SEL.unregister(sock)  # client closed connection so the server
-            sock.close()
+            close_connection(sock, 'no data, closing', 'no data provided, your connection is closed')
     if mask & selectors.EVENT_WRITE:
         if data.outb:
-            print('echoing', repr(data.outb), 'to', data.addr)
-            # data.outb = binary_to_dict(data.outb)  # todo mongo with this
-            sent = sock.send(data.outb)  # Should be ready to write
+            query, parameters = pickle.loads(data.outb)[0], pickle.loads(data.outb)[1]
+            chunk_size, shuffle, random_state = parameters
+            cursor = manage_query(query, chunk_size=chunk_size, shuffle=shuffle, random_state=random_state)
+            if cursor.count():
+                sock.send(b'')
+                data.outb = {}
+            else:
+                close_connection(sock, 'closing connection to {0}'.format(data.addr),
+                                 'no results found defined by this criteria, exiting')
+        else:
+            close_connection(sock, 'closing connection to {0}'.format(data.addr))
 
-            data.outb = data.outb[sent:]
+
+def close_connection(sock, server_message, client_message=None):
+    if client_message:
+        sock.send(bytes(client_message, encoding="ascii"))
+    print(server_message)
+    SEL.unregister(sock)
+    sock.close()
+
+
+def manage_query(query, chunk_size, shuffle, random_state):
+    return collection.find(query, {'_id': 0, 'input': 0, 'output': 0, 'meta': 0})
 
 
 def prepare():
@@ -75,10 +95,21 @@ def prepare():
 
 
 if __name__ == '__main__':
+    try:
+        mongo_session = connect_mongo()
+    except ConnectionFailure:
+        print('Failed to connect to database, exiting')
+        sys.exit()
+    except ValueError as e:
+        print(e, 'exiting')
+        sys.exit()
+
+    collection = mongo_session['file']['file']
+
     prepare()
 
     while True:
-        events = SEL.select(timeout=None)  # returns a list of (key, events) tuples, one for each socket
+        events = SEL.select(timeout=None)
         for key, mask in events:
             if key.data is None:
                 accept_wrapper(key.fileobj)  # call to get the new socket object and register it with the selector

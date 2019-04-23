@@ -7,7 +7,7 @@ def binary_to_dict(b):
     return d
 
 
-def dict_to_binary(self, d):
+def dict_to_binary(d):
     s = json.dumps(d)
     binary = ' '.join(format(ord(letter), 'b') for letter in s)
     return str.encode(binary)
